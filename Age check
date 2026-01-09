@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>年齢確認</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <style>
+    :root{
+      --bg:#0f172a; --fg:#e5e7eb; --yes:#16a34a; --no:#dc2626; --yes-txt:#ecfdf5; --no-txt:#fef2f2;
+      --card:#111827; --muted:#94a3b8; --border:#334155; --warn:#fef2f2; --warn-bg:#b91c1c;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans JP",sans-serif}
+    .wrap{min-height:100%;display:grid;grid-template-rows:auto 1fr auto;gap:16px;padding:16px}
+    header{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.02em}
+    main{display:grid;grid-template-columns:1fr;gap:16px}
+    .btn{display:flex;align-items:center;justify-content:center;border:none;border-radius:20px;padding:24px;font-size:32px;font-weight:800;cursor:pointer;transition:transform .05s ease,filter .15s ease;min-height:28vh;text-align:center;line-height:1.3}
+    .btn:active{transform:scale(.98);filter:saturate(1.2)}
+    .yes{background:var(--yes);color:var(--yes-txt)}
+    .no{background:var(--no);color:var(--no-txt)}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    footer{opacity:.7;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+    .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;border:1px solid #64748b33;border-bottom-width:3px;border-radius:6px;padding:0 6px;background:#0b1220;color:#cbd5e1}
+    details{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px}
+    summary{cursor:pointer;font-weight:700;color:var(--muted)}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{border-bottom:1px solid var(--border);padding:8px;font-size:14px;text-align:left;white-space:nowrap}
+    td.wrap{white-space:normal}
+    .bar{display:flex;gap:8px;align-items:center}
+    input[type="text"],input[type="url"]{background:#0b1220;border:1px solid var(--border);color:var(--fg);border-radius:8px;padding:8px;width:100%}
+    .small{font-size:12px;color:var(--muted)}
+    .warnMsg{display:none;padding:20px;background:var(--warn-bg);color:var(--warn);border-radius:12px;font-size:20px;text-align:center;font-weight:700;line-height:1.4}
+    @media (orientation:portrait){.row{grid-template-columns:1fr}.btn{min-height:26vh;font-size:28px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1 id="title">年齢確認</h1>
+      <div class="bar">
+        <div class="small">
+          <strong>人数</strong>：
+          <span id="cntYes">0</span> / <span id="cntNo">0</span>
+        </div>
+        <button id="resetCnt" class="kbd" title="人数リセット">RESET</button>
+        <button id="fs" class="kbd" title="全画面 (F)">FS</button>
+        <span class="small">Y/Nで操作</span>
+      </div>
+        <button id="fs" class="kbd" title="全画面 (F)">FS</button>
+        <span class="small">Y/Nで操作</span>
+      </div>
+    </header>
+
+    <main>
+      <div class="row" id="choiceRow">
+        <button id="yes" class="btn yes" data-key="y">私は20歳以上です</button>
+        <button id="no" class="btn no" data-key="n">私は20歳未満です</button>
+      </div>
+      <div id="warn" class="warnMsg">未成年の場合はお酒の提供ができません</div>
+
+      <details id="histPanel">
+        <summary>履歴を見る／設定</summary>
+        <div class="bar" style="margin:8px 0 4px">
+          <label class="small" for="api">履歴API URL（空ならローカル保存）</label>
+          <input type="url" id="api" placeholder="https://script.google.com/macros/s/xxxxxxxx/exec">
+        </div>
+        <div class="bar small">
+          <label for="siteTitle">サイトタイトル</label>
+          <input type="text" id="siteTitle" placeholder="例：年齢確認">
+          <button class="kbd" id="saveCfg">保存</button>
+          <button class="kbd" id="reload">更新</button>
+        </div>
+        <table id="hist">
+          <thead><tr><th>日時</th><th>選択</th><th>端末</th><th>備考</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </details>
+    </main>
+
+    <footer>
+      <div id="status">準備完了</div>
+    </footer>
+  </div>
+
+  <audio id="clickSound" preload="auto">
+    <source src="data:audio/mp3;base64,//uQZAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCAAAAAAAD////////////////////////////8AAAACAAACcQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" type="audio/mpeg">
+  </audio>
+
+  <script>
+    (function(){
+      const qs = new URLSearchParams(location.search);
+      const $ = (id)=>document.getElementById(id);
+
+      const cfg = {
+        title  : qs.get('title')   || localStorage.getItem('title')   || '年齢確認',
+        yesText: '私は20歳以上です',
+        noText : '私は20歳未満です',
+        yesURL : qs.get('yesURL')  || '',
+        noURL  : qs.get('noURL')   || '',
+        sound  : qs.get('sound') === '1' || false,
+        api    : qs.get('api')     || localStorage.getItem('api')     || '',
+        yesColor: qs.get('yesColor') || '',
+        noColor : qs.get('noColor')  || '',
+        showHist: (qs.get('history') === '1')
+      };
+
+      $('title').textContent = cfg.title;
+      $('siteTitle').value = cfg.title;
+      $('api').value = cfg.api;
+      const yesBtn = $('yes');
+      const noBtn  = $('no');
+      const warn   = $('warn');
+      yesBtn.textContent = cfg.yesText; if(cfg.yesColor) yesBtn.style.background = cfg.yesColor;
+      noBtn.textContent  = cfg.noText;  if(cfg.noColor)  noBtn.style.background = cfg.noColor;
+      if(cfg.showHist) $('histPanel').setAttribute('open','');
+
+      const status = $('status');
+      const cntYesEl = $('cntYes');
+      const cntNoEl  = $('cntNo');
+      const resetBtn = $('resetCnt');
+      const sound = $('clickSound');
+
+      function fmt(ts){
+        try{ return new Date(ts).toLocaleString('ja-JP',{hour12:false}); }catch{ return String(ts) }
+      }
+
+      async function act(which){
+        // 人数カウンター更新（ローカル保存）
+        const c = JSON.parse(localStorage.getItem('counts')||'{"yes":0,"no":0}');
+        if(which===cfg.yesText) c.yes++;
+        if(which===cfg.noText)  c.no++;
+        localStorage.setItem('counts', JSON.stringify(c));
+        cntYesEl.textContent = c.yes;
+        cntNoEl.textContent  = c.no;
+        try { if (cfg.sound) { sound.currentTime = 0; await sound.play().catch(()=>{}); } } catch(e) {}
+        if (navigator.vibrate) navigator.vibrate(15);
+        const rec = { ts: Date.now(), choice: which, ua: navigator.userAgent, note: '' };
+        status.textContent = `${fmt(rec.ts)} - ${which} を選択`;
+        const arr = JSON.parse(localStorage.getItem('history')||'[]');
+        arr.unshift(rec); localStorage.setItem('history', JSON.stringify(arr.slice(0,5000)));
+        if(cfg.api){
+          try{
+            await fetch(cfg.api, {
+            method: 'POST',
+            // CORSプリフライト回避のため、JSONではなく text/plain を明示
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(rec)
+          });
+          }catch(e){ console.warn('API送信失敗', e); }
+        }
+        if(which===cfg.noText){
+          $('choiceRow').style.display='none';
+          warn.style.display='block';
+        }else{
+          const url = cfg.yesURL;
+          if(url){ setTimeout(()=>location.href=url, 120); }
+        }
+        render();
+      }
+
+      yesBtn.addEventListener('click', ()=>act(cfg.yesText));
+      noBtn.addEventListener('click', ()=>act(cfg.noText));
+
+      resetBtn.addEventListener('click', ()=>{
+        const msg = '人数カウンターをリセットしますか？';
+        if(!window.confirm(msg)) return;
+        const c = { yes: 0, no: 0 };
+        localStorage.setItem('counts', JSON.stringify(c));
+        cntYesEl.textContent = '0';
+        cntNoEl.textContent  = '0';
+        status.textContent = '人数をリセットしました';
+      });
+
+      document.addEventListener('keydown', (e)=>{
+        const k = e.key.toLowerCase();
+        if(k==='y') yesBtn.click();
+        if(k==='n') noBtn.click();
+        if(k==='f') toggleFS();
+        if(k==='r') resetBtn.click();
+      });
+        if(k==='y') yesBtn.click();
+        if(k==='n') noBtn.click();
+        if(k==='f') toggleFS();
+      });
+
+      function toggleFS(){
+        if(!document.fullscreenElement){ document.documentElement.requestFullscreen?.(); }
+        else { document.exitFullscreen?.(); }
+      }
+      $('fs').addEventListener('click', toggleFS);
+
+      $('saveCfg').addEventListener('click', ()=>{
+        localStorage.setItem('title', $('siteTitle').value.trim()||'年齢確認');
+        localStorage.setItem('api', $('api').value.trim());
+        location.reload();
+      });
+      $('reload').addEventListener('click', ()=>render(true));
+
+      async function fetchRemote(){
+        if(!cfg.api) return [];
+        try{
+          const url = new URL(cfg.api);
+          url.searchParams.set('mode','list');
+          url.searchParams.set('limit','200');
+          const res = await fetch(url, {mode:'cors'});
+          if(!res.ok) throw new Error('HTTP '+res.status);
+          const data = await res.json();
+          return Array.isArray(data)?data:[];
+        }catch(e){ console.warn('履歴取得失敗', e); return []; }
+      }
+
+      async function render(forceRemote=false){
+        const tbody = document.querySelector('#hist tbody');
+        tbody.innerHTML = '<tr><td colspan="4" class="wrap">読み込み中...</td></tr>';
+        let rows = JSON.parse(localStorage.getItem('history')||'[]');
+        if(cfg.api){
+          const remote = await fetchRemote();
+          if(remote.length || forceRemote) rows = remote;
+        }
+        tbody.innerHTML = rows.slice(0,200).map(r=>`<tr><td>${fmt(r.ts)}</td><td>${r.choice}</td><td>${(r.ua||'').split('(')[0]}</td><td class="wrap">${r.note||''}</td></tr>`).join('') || '<tr><td colspan="4" class="wrap">履歴なし</td></tr>';
+      }
+
+      window.addEventListener('load', ()=>{
+        // 初期カウンター表示
+        const c = JSON.parse(localStorage.getItem('counts')||'{"yes":0,"no":0}');
+        cntYesEl.textContent = c.yes;
+        cntNoEl.textContent  = c.no;
+        setTimeout(()=>window.scrollTo(0,1), 300);
+        render();
+      });
+    })();
+  </script>
+</body>
+</html>
